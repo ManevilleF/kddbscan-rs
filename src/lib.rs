@@ -40,23 +40,24 @@
 //! }
 //!
 //! // Create a vector with your data
-//! let mut coordinates: Vec<Coordinate> = vec![];
-//! coordinates.push(Coordinate { x: 11.0, y: 12.0 });
-//! coordinates.push(Coordinate { x: 0.0, y: 0.0 });
-//! coordinates.push(Coordinate { x: 12.0, y: 11.0 });
-//! coordinates.push(Coordinate { x: 11.0, y: 11.0 });
-//! coordinates.push(Coordinate { x: 1.0, y: 2.0 });
-//! coordinates.push(Coordinate { x: 3.0, y: 1.0 });
+//! let mut coordinates: Vec<Coordinate> = vec![
+//!     Coordinate { x: 11.0, y: 12.0 },
+//!     Coordinate { x: 0.0, y: 0.0 },
+//!     Coordinate { x: 12.0, y: 11.0 },
+//!     Coordinate { x: 11.0, y: 11.0 },
+//!     Coordinate { x: 1.0, y: 2.0 },
+//!     Coordinate { x: 3.0, y: 1.0 },
+//! ];
 //!
 //! // Call cluster function
 //! let clustered =  cluster(coordinates, 2, None, None);
-//! let first_cluster_id = clustered.get(0).unwrap().get_cluster_id();
-//! let second_cluster_id = clustered.get(1).unwrap().get_cluster_id();
+//! let first_cluster_id = clustered.get(0).unwrap().cluster_id();
+//! let second_cluster_id = clustered.get(1).unwrap().cluster_id();
 //!
-//! assert_eq!(first_cluster_id, clustered.get(2).unwrap().get_cluster_id());
-//! assert_eq!(first_cluster_id, clustered.get(3).unwrap().get_cluster_id());
-//! assert_eq!(second_cluster_id, clustered.get(4).unwrap().get_cluster_id());
-//! assert_eq!(second_cluster_id, clustered.get(5).unwrap().get_cluster_id());
+//! assert_eq!(first_cluster_id, clustered.get(2).unwrap().cluster_id());
+//! assert_eq!(first_cluster_id, clustered.get(3).unwrap().cluster_id());
+//! assert_eq!(second_cluster_id, clustered.get(4).unwrap().cluster_id());
+//! assert_eq!(second_cluster_id, clustered.get(5).unwrap().cluster_id());
 //! ```
 
 #![warn(clippy::all, clippy::nursery)]
@@ -227,8 +228,8 @@ impl<F: IntoPoint> Kddbscan<F> {
                 let density = self.deviation_density(point).unwrap();
 
                 if density <= self.deviation_factor as f64 {
-                    let tmp_cluster_assigns = self.expand_cluster(&cluster_assigns, point, c);
-                    cluster_assigns.extend(tmp_cluster_assigns);
+                    cluster_assigns.insert(point.index(), ClusterId::Classified(c));
+                    self.expand_cluster(&mut cluster_assigns, point, c);
                     c += 1;
                 } else {
                     cluster_assigns.insert(point.index(), ClusterId::Outline);
@@ -354,19 +355,13 @@ impl<F: IntoPoint> Kddbscan<F> {
     /// Expanding the cluster
     fn expand_cluster(
         &self,
-        core_cluster_assigns: &HashMap<usize, ClusterId>,
+        cluster_assigns: &mut HashMap<usize, ClusterId>,
         point: &PointWrapper<F>,
         cluster_id: usize,
-    ) -> HashMap<usize, ClusterId> {
-        // Storing cluster assign details in separate variable
-        // Because rust don't allowing to mutate the vector inside the loop
-        let mut cluster_assigns: HashMap<usize, ClusterId> = HashMap::new();
-        cluster_assigns.insert(point.index(), ClusterId::Classified(cluster_id));
-
+    ) {
         // We are temporary storing points inside this vector
         // See the ExpandCluster procedure in the research publication
-        let mut core_points: Vec<&PointWrapper<F>> = vec![];
-        core_points.push(point);
+        let mut core_points: Vec<&PointWrapper<F>> = vec![point];
 
         // Creating a runtime borrow checker for the vector.
         // We want to push items into this vector while iterating over the same vector
@@ -380,12 +375,10 @@ impl<F: IntoPoint> Kddbscan<F> {
             cluster_assigns.insert(point_i.index(), ClusterId::Classified(cluster_id));
 
             for point_j in neighbors {
-                let point_j_cluster_id =
-                    cluster_assigns.get(&point_j.index()).unwrap_or_else(|| {
-                        core_cluster_assigns
-                            .get(&point_j.index())
-                            .unwrap_or(&ClusterId::Unclassified)
-                    });
+                let point_j_cluster_id = cluster_assigns
+                    .get(&point_j.index())
+                    .or_else(|| cluster_assigns.get(&point_j.index()))
+                    .unwrap_or(&ClusterId::Unclassified);
 
                 match point_j_cluster_id {
                     ClusterId::Classified(_) => {}
@@ -412,8 +405,6 @@ impl<F: IntoPoint> Kddbscan<F> {
 
             i += 1;
         }
-
-        cluster_assigns
     }
 
     /// Checking the that weather two points are density reachable

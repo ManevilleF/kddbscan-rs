@@ -8,4 +8,4 @@ edition = "2018"
 
 [dependencies]
 kddbscan = {path="../"}
-colored = "1.9.3"
+colored = "2.1"

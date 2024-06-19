@@ -16,4 +16,4 @@ A k -Deviation Density Based Clustering Algorithm (kDDBSCAN)
 
 
 [dependencies]
-ordered-float = "1.0.2"
+ordered-float = "4.2"

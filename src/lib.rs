@@ -25,7 +25,7 @@
 //! # Usage
 //!
 //! ```rust
-//! use kddbscan::{cluster, IntoPoint};
+//! # use kddbscan::{cluster, IntoPoint};
 //!
 //! pub struct Coordinate {
 //!     pub x: f64,
@@ -39,27 +39,27 @@
 //!     }
 //! }
 //!
-//! fn main() {
-//!     // Create a vector with your data
-//!     let mut coordinates: Vec<Coordinate> = vec![];    
-//!     coordinates.push(Coordinate { x: 11.0, y: 12.0 });
-//!     coordinates.push(Coordinate { x: 0.0, y: 0.0 });
-//!     coordinates.push(Coordinate { x: 12.0, y: 11.0 });
-//!     coordinates.push(Coordinate { x: 11.0, y: 11.0 });
-//!     coordinates.push(Coordinate { x: 1.0, y: 2.0 });
-//!     coordinates.push(Coordinate { x: 3.0, y: 1.0 });
+//! // Create a vector with your data
+//! let mut coordinates: Vec<Coordinate> = vec![];
+//! coordinates.push(Coordinate { x: 11.0, y: 12.0 });
+//! coordinates.push(Coordinate { x: 0.0, y: 0.0 });
+//! coordinates.push(Coordinate { x: 12.0, y: 11.0 });
+//! coordinates.push(Coordinate { x: 11.0, y: 11.0 });
+//! coordinates.push(Coordinate { x: 1.0, y: 2.0 });
+//! coordinates.push(Coordinate { x: 3.0, y: 1.0 });
 //!
-//!     // Call cluster function
-//!     let clustered =  cluster(coordinates, 2, None, None);
-//!     let first_cluster_id = clustered.get(0).unwrap().get_cluster_id();
-//!     let second_cluster_id = clustered.get(1).unwrap().get_cluster_id();
-//!     
-//!     assert_eq!(first_cluster_id, clustered.get(2).unwrap().get_cluster_id());
-//!     assert_eq!(first_cluster_id, clustered.get(3).unwrap().get_cluster_id());
-//!     assert_eq!(second_cluster_id, clustered.get(4).unwrap().get_cluster_id());
-//!     assert_eq!(second_cluster_id, clustered.get(5).unwrap().get_cluster_id());
-//! }
+//! // Call cluster function
+//! let clustered =  cluster(coordinates, 2, None, None);
+//! let first_cluster_id = clustered.get(0).unwrap().get_cluster_id();
+//! let second_cluster_id = clustered.get(1).unwrap().get_cluster_id();
+//!
+//! assert_eq!(first_cluster_id, clustered.get(2).unwrap().get_cluster_id());
+//! assert_eq!(first_cluster_id, clustered.get(3).unwrap().get_cluster_id());
+//! assert_eq!(second_cluster_id, clustered.get(4).unwrap().get_cluster_id());
+//! assert_eq!(second_cluster_id, clustered.get(5).unwrap().get_cluster_id());
 //! ```
+
+#![warn(clippy::all, clippy::nursery)]
 
 extern crate ordered_float;
 
@@ -75,7 +75,7 @@ pub trait IntoPoint: Sized {
 /// Cluster id types
 ///
 /// > See `ExpandCluster` procedure in [this](https://www.researchgate.net/publication/323424266_A_k_-Deviation_Density_Based_Clustering_Algorithm) research.
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum ClusterId {
     Outline,
     Unclassified,
@@ -91,8 +91,8 @@ pub struct PointWrapper<F: IntoPoint> {
 }
 
 impl<F: IntoPoint> PointWrapper<F> {
-    fn new(index: usize, point: F) -> PointWrapper<F> {
-        PointWrapper {
+    const fn new(index: usize, point: F) -> Self {
+        Self {
             point,
             index,
             cluster_id: ClusterId::Unclassified,
@@ -104,21 +104,25 @@ impl<F: IntoPoint> PointWrapper<F> {
     }
 
     /// Returns the cluster id
-    pub fn get_cluster_id(&self) -> &ClusterId {
+    #[inline]
+    pub const fn get_cluster_id(&self) -> &ClusterId {
         &self.cluster_id
     }
 
-    fn get_distance(&self, wrapper: &PointWrapper<F>) -> f64 {
+    #[inline]
+    fn get_distance(&self, wrapper: &Self) -> f64 {
         self.point.get_distance(&wrapper.point)
     }
 
     /// Returns the index of the point
-    pub fn get_id(&self) -> usize {
+    #[inline]
+    pub const fn get_id(&self) -> usize {
         self.index
     }
 
     /// Returns a reference to the original point
-    pub fn into_inner(&self) -> &F {
+    #[inline]
+    pub const fn into_inner(&self) -> &F {
         &self.point
     }
 }
@@ -135,16 +139,14 @@ struct Kddbscan<F: IntoPoint> {
 
 impl<F: IntoPoint> Kddbscan<F> {
     pub fn new<T: IntoPoint>(points: Vec<T>, k: u32, n: u32, deviation_factor: u32) -> Kddbscan<T> {
-        let mut i = 0;
-        let mut wrappers: Vec<PointWrapper<T>> = vec![];
-
-        for point in points {
-            wrappers.push(PointWrapper::new(i, point));
-            i += 1;
-        }
+        let points = points
+            .into_iter()
+            .enumerate()
+            .map(|(i, p)| PointWrapper::new(i, p))
+            .collect();
 
         Kddbscan {
-            points: wrappers,
+            points,
             k,
             n,
             deviation_factor,
@@ -153,29 +155,24 @@ impl<F: IntoPoint> Kddbscan<F> {
 
     /// Clustering all points
     pub fn cluster(&mut self) {
-        let mut points_iter = self.points.iter();
-
         let mut c = 0;
         let mut cluster_assigns: HashMap<usize, ClusterId> = HashMap::new();
-        while let Some(point) = points_iter.next() {
+        for point in &self.points {
             let cluster_id = cluster_assigns
                 .get(&point.get_id())
                 .unwrap_or(&ClusterId::Unclassified);
-            match cluster_id {
-                ClusterId::Unclassified => {
-                    let density = self.deviation_density(point).unwrap();
+            if *cluster_id == ClusterId::Unclassified {
+                let density = self.deviation_density(point).unwrap();
 
-                    if density <= self.deviation_factor as f64 {
-                        let tmp_cluster_assigns = self.expand_cluster(&cluster_assigns, point, c);
-                        for (k, v) in tmp_cluster_assigns {
-                            cluster_assigns.insert(k, v);
-                        }
-                        c += 1;
-                    } else {
-                        cluster_assigns.insert(point.get_id(), ClusterId::Outline);
+                if density <= self.deviation_factor as f64 {
+                    let tmp_cluster_assigns = self.expand_cluster(&cluster_assigns, point, c);
+                    for (k, v) in tmp_cluster_assigns {
+                        cluster_assigns.insert(k, v);
                     }
+                    c += 1;
+                } else {
+                    cluster_assigns.insert(point.get_id(), ClusterId::Outline);
                 }
-                _ => {}
             }
         }
 
@@ -197,28 +194,25 @@ impl<F: IntoPoint> Kddbscan<F> {
             .collect();
 
         let max = distances.iter().max();
-        match max {
-            Some(max) => {
-                let max = max.into_inner();
+        max.map_or(Err("Can not find a neighbor"), |max| {
+            let max = max.into_inner();
 
-                let all_distances: Vec<OrderedFloat<f64>> = self
-                    .points
-                    .iter()
-                    .map(|p| OrderedFloat::from(p.get_distance(point)))
-                    .collect();
-                let all_max = all_distances.iter().max().unwrap().into_inner();
-                let without_max: Vec<f64> = all_distances
-                    .iter()
-                    .map(|d| d.into_inner())
-                    .filter(|d| d != &all_max)
-                    .collect();
+            let all_distances: Vec<OrderedFloat<f64>> = self
+                .points
+                .iter()
+                .map(|p| OrderedFloat::from(p.get_distance(point)))
+                .collect();
+            let all_max = all_distances.iter().max().unwrap().into_inner();
+            let without_max: Vec<f64> = all_distances
+                .iter()
+                .map(|d| d.into_inner())
+                .filter(|d| d != &all_max)
+                .collect();
 
-                let all_avg = without_max.iter().sum::<f64>() / without_max.len() as f64;
+            let all_avg = without_max.iter().sum::<f64>() / without_max.len() as f64;
 
-                Ok(max / all_avg)
-            }
-            None => Err("Can not find a neighbor"),
-        }
+            Ok(max / all_avg)
+        })
     }
 
     /// Getting the mutual k nearest neighbors for a given point
@@ -251,14 +245,11 @@ impl<F: IntoPoint> Kddbscan<F> {
             n: u32,
         ) {
             // Checking the minimum number of mutual neihborhood
-            if n >= kddbscan.n {
-                if n != 0 {
-                    inner_neighbors.push(point);
-                }
+            if n >= kddbscan.n && n != 0 {
+                inner_neighbors.push(point);
             }
 
-            let mut points: Vec<&PointWrapper<T>> =
-                kddbscan.points.iter().map(|point| point).collect();
+            let mut points: Vec<&PointWrapper<T>> = kddbscan.points.iter().collect();
 
             // Sorting other points by distance to the selected point
             points.sort_by(|a, b| {
@@ -329,11 +320,12 @@ impl<F: IntoPoint> Kddbscan<F> {
             cluster_assigns.insert(point_i.get_id(), ClusterId::Classified(cluster_id));
 
             for point_j in neighbors {
-                let point_j_cluster_id = cluster_assigns.get(&point_j.get_id()).unwrap_or(
-                    core_cluster_assigns
-                        .get(&point_j.get_id())
-                        .unwrap_or(&ClusterId::Unclassified),
-                );
+                let point_j_cluster_id =
+                    cluster_assigns.get(&point_j.get_id()).unwrap_or_else(|| {
+                        core_cluster_assigns
+                            .get(&point_j.get_id())
+                            .unwrap_or(&ClusterId::Unclassified)
+                    });
 
                 match point_j_cluster_id {
                     ClusterId::Classified(_) => {}
@@ -442,9 +434,7 @@ pub fn cluster<T: IntoPoint>(
 
     kddbscan.cluster();
 
-    let clusters = kddbscan.get_clustered();
-
-    clusters
+    kddbscan.get_clustered()
 }
 
 #[cfg(test)]
@@ -457,19 +447,20 @@ mod tests {
     }
 
     impl IntoPoint for Coordinate {
-        fn get_distance(&self, neighbor: &Coordinate) -> f64 {
-            ((self.x - neighbor.x).powi(2) + (self.y - neighbor.y).powi(2)).powf(0.5)
+        fn get_distance(&self, neighbor: &Self) -> f64 {
+            (self.x - neighbor.x).hypot(self.y - neighbor.y)
         }
     }
 
     fn create_kddbscan(k: u32) -> Kddbscan<Coordinate> {
-        let mut coordinates: Vec<Coordinate> = vec![];
-        coordinates.push(Coordinate { x: 11.0, y: 12.0 });
-        coordinates.push(Coordinate { x: 0.0, y: 0.0 });
-        coordinates.push(Coordinate { x: 12.0, y: 11.0 });
-        coordinates.push(Coordinate { x: 11.0, y: 11.0 });
-        coordinates.push(Coordinate { x: 1.0, y: 2.0 });
-        coordinates.push(Coordinate { x: 3.0, y: 1.0 });
+        let coordinates: Vec<Coordinate> = vec![
+            Coordinate { x: 11.0, y: 12.0 },
+            Coordinate { x: 0.0, y: 0.0 },
+            Coordinate { x: 12.0, y: 11.0 },
+            Coordinate { x: 11.0, y: 11.0 },
+            Coordinate { x: 1.0, y: 2.0 },
+            Coordinate { x: 3.0, y: 1.0 },
+        ];
 
         Kddbscan::<Coordinate>::new::<Coordinate>(coordinates, k, 1, 999999)
     }
@@ -477,14 +468,14 @@ mod tests {
     #[test]
     fn test_mutual_neighbor() {
         let kddbscan_2 = create_kddbscan(2);
-        let point_wrapper = kddbscan_2.points.get(0).unwrap();
+        let point_wrapper = kddbscan_2.points.first().unwrap();
         let mutual_neighbors = kddbscan_2.get_mutual_neighbors(point_wrapper);
         assert_eq!(mutual_neighbors.len(), 2);
-        assert_eq!(mutual_neighbors.get(0).unwrap().get_id(), 3);
+        assert_eq!(mutual_neighbors.first().unwrap().get_id(), 3);
         assert_eq!(mutual_neighbors.get(1).unwrap().get_id(), 2);
 
         let kddbscan_3 = create_kddbscan(3);
-        let point_wrapper = kddbscan_3.points.get(0).unwrap();
+        let point_wrapper = kddbscan_3.points.first().unwrap();
         let mutual_neighbors = kddbscan_3.get_mutual_neighbors(point_wrapper);
         assert_eq!(mutual_neighbors.len(), 5);
     }
@@ -492,24 +483,22 @@ mod tests {
     #[test]
     fn test_deviation_density() {
         let kddbscan = create_kddbscan(2);
-        let point_wrapper = kddbscan.points.get(0).unwrap();
+        let point_wrapper = kddbscan.points.first().unwrap();
         let deviation_density = kddbscan.deviation_density(point_wrapper).unwrap();
-        assert!(deviation_density<0.24 && deviation_density>0.22);
-
+        assert!(deviation_density < 0.24 && deviation_density > 0.22);
 
         let point_wrapper = kddbscan.points.get(1).unwrap();
         let deviation_density = kddbscan.deviation_density(point_wrapper).unwrap();
 
-        assert!(deviation_density<0.61 && deviation_density>0.60);
+        assert!(deviation_density < 0.61 && deviation_density > 0.60);
     }
 
     #[test]
-    fn test_density_reachable(){
+    fn test_density_reachable() {
         let kddbscan = create_kddbscan(2);
         let density_reachable = kddbscan.density_reachable(
-            kddbscan.points.get(0).unwrap()
-            , 
-            kddbscan.points.get(1).unwrap()
+            kddbscan.points.first().unwrap(),
+            kddbscan.points.get(1).unwrap(),
         );
 
         assert!(density_reachable);

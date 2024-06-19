@@ -1,3 +1,4 @@
+#![warn(clippy::all, clippy::nursery)]
 use colored::Colorize;
 use kddbscan::{cluster, ClusterId, IntoPoint};
 
@@ -7,8 +8,8 @@ pub struct Coordinate {
 }
 
 impl IntoPoint for Coordinate {
-    fn get_distance(&self, neighbor: &Coordinate) -> f64 {
-        ((self.x - neighbor.x).powi(2) + (self.y - neighbor.y).powi(2)).powf(0.5)
+    fn get_distance(&self, neighbor: &Self) -> f64 {
+        (self.x - neighbor.x).hypot(self.y - neighbor.y)
     }
 }
 
@@ -55,9 +56,10 @@ fn main() {
                 .iter()
                 .find(|w| w.into_inner().x == (x as f64) && w.into_inner().y == (y as f64));
 
-            let point = match item {
-                Some(item) => {
-                    if let ClusterId::Classified(cid) = item.get_cluster_id() {
+            let point = item.map_or_else(
+                || " ".white(),
+                |item| {
+                    if let ClusterId::Classified(cid) = item.cluster_id() {
                         if cid == &0 {
                             "X".blue()
                         } else {
@@ -66,9 +68,8 @@ fn main() {
                     } else {
                         "X".red()
                     }
-                }
-                None => " ".white(),
-            };
+                },
+            );
 
             if x == 12 {
                 println!("{}|", point);

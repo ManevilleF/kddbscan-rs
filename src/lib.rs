@@ -72,6 +72,67 @@ pub trait IntoPoint: Sized {
     fn get_distance(&self, neighbor: &Self) -> f64;
 }
 
+impl IntoPoint for [f64; 2] {
+    fn get_distance(&self, neighbor: &Self) -> f64 {
+        (self[0] - neighbor[0]).hypot(self[1] - neighbor[1])
+    }
+}
+
+impl IntoPoint for [f32; 2] {
+    fn get_distance(&self, neighbor: &Self) -> f64 {
+        (self[0] - neighbor[0]).hypot(self[1] - neighbor[1]) as f64
+    }
+}
+
+impl IntoPoint for (f64, f64) {
+    fn get_distance(&self, neighbor: &Self) -> f64 {
+        (self.0 - neighbor.0).hypot(self.1 - neighbor.1)
+    }
+}
+
+impl IntoPoint for (f32, f32) {
+    fn get_distance(&self, neighbor: &Self) -> f64 {
+        (self.0 - neighbor.0).hypot(self.1 - neighbor.1) as f64
+    }
+}
+
+// Implementation for 3D points
+impl IntoPoint for [f64; 3] {
+    fn get_distance(&self, neighbor: &Self) -> f64 {
+        let dx = self[0] - neighbor[0];
+        let dy = self[1] - neighbor[1];
+        let dz = self[2] - neighbor[2];
+        dz.mul_add(dz, dx.mul_add(dx, dy.powi(2))).sqrt()
+    }
+}
+
+impl IntoPoint for [f32; 3] {
+    fn get_distance(&self, neighbor: &Self) -> f64 {
+        let dx = self[0] - neighbor[0];
+        let dy = self[1] - neighbor[1];
+        let dz = self[2] - neighbor[2];
+        dz.mul_add(dz, dx.mul_add(dx, dy.powi(2))).sqrt() as f64
+    }
+}
+
+impl IntoPoint for (f64, f64, f64) {
+    fn get_distance(&self, neighbor: &Self) -> f64 {
+        let dx = self.0 - neighbor.0;
+        let dy = self.1 - neighbor.1;
+        let dz = self.2 - neighbor.2;
+        dz.mul_add(dz, dx.mul_add(dx, dy.powi(2))).sqrt()
+    }
+}
+
+impl IntoPoint for (f32, f32, f32) {
+    fn get_distance(&self, neighbor: &Self) -> f64 {
+        let dx = self.0 - neighbor.0;
+        let dy = self.1 - neighbor.1;
+        let dz = self.2 - neighbor.2;
+        dz.mul_add(dz, dx.mul_add(dx, dy.powi(2))).sqrt() as f64
+    }
+}
+
 /// Cluster id types
 ///
 /// > See `ExpandCluster` procedure in [this](https://www.researchgate.net/publication/323424266_A_k_-Deviation_Density_Based_Clustering_Algorithm) research.
